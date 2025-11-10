@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+venv*/
+.env
+.idea/
+.vscode/
+
+# Ollama or cache
+*.log
+*.tmp
+*.cache
+*.jsonl
+
+# Streamlit
+.streamlit/
+
+# Data / output
+data/reports/
+data/feedback.json
+
+# System
+.DS_Store
+Thumbs.db
