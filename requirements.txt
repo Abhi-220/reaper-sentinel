@@ -1,12 +1,13 @@
 openai
 python-dotenv
 fastapi
-uvicorn
+uvicorn[standard]
 colorama
 streamlit
 pandas
 requests
 matplotlib
+psutil
 
 
 
