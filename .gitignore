@@ -1,30 +1,74 @@
-# Python
+# ─────────────────────────────────────────────
+# ⚔️ Reaper Sentinel .gitignore
+# ─────────────────────────────────────────────
+
+# --- Python ---
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
-.Python
-env/
-venv/
-ENV/
-venv*/
+*.so
+*.egg-info/
+*.egg
 .env
-.idea/
+.venv/
+venv/
+env/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- IDE / Editor Files ---
 .vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
 
-# Ollama or cache
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Logs & Reports ---
+logs/
 *.log
-*.tmp
-*.cache
-*.jsonl
-
-# Streamlit
-.streamlit/
-
-# Data / output
 data/reports/
 data/feedback.json
 
-# System
-.DS_Store
-Thumbs.db
+# --- Streamlit & Cache ---
+.streamlit/
+.streamlit/secrets.toml
+.cache/
+__cache__/
+
+# --- Notebooks / Outputs ---
+*.ipynb_checkpoints/
+*.nbconvert/
+
+# --- Build / Dist ---
+build/
+dist/
+*.spec
+
+# --- Docker ---
+*.pid
+*.tar
+*.bak
+.dockerignore
+docker-compose.override.yml
+
+# --- Local Credentials ---
+*.env
+.env.*
+config.yaml
+config.json
+
+# --- Ollama / Models ---
+*.bin
+models/
+model_cache/
+
+# --- Misc ---
+tmp/
+temp/
+*.tmp

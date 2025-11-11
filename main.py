@@ -1,8 +1,9 @@
+# main.py
 from fastapi import FastAPI
 from pydantic import BaseModel
 from core.analyzer import batch_analyze
 
-app = FastAPI(title="Reaper Sentinel API", version="0.2")
+app = FastAPI(title="Reaper Sentinel API", version="0.4")
 
 class LogRequest(BaseModel):
     logs: list

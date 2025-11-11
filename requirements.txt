@@ -3,3 +3,13 @@ python-dotenv
 fastapi
 uvicorn
 colorama
+streamlit
+pandas
+requests
+matplotlib
+
+
+
+
+
+
