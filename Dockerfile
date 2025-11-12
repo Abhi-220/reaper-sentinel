@@ -23,6 +23,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all project files into container
 COPY . /app
 
+# Create a non-root user and switch to it
+RUN adduser --disabled-password --gecos '' reaper || true
+RUN chown -R reaper:reaper /app
+USER reaper
+
+# Default command
+CMD ["python", "run_reaper.py"]
+
 # Expose ports for FastAPI and Streamlit
 EXPOSE 8000 8501
 

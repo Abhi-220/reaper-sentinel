@@ -1,62 +1,63 @@
+# core/analyzer.py
 import json
 import requests
 import os
+import time
+import logging
 
-# Use environment variable for dynamic model backend (Docker will provide this)
+# Config
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+MODEL_NAME = os.getenv("MODEL_NAME", "mistral")
+
+# Logger
+os.makedirs("logs", exist_ok=True)
+logger = logging.getLogger("reaper.analyzer")
+if not logger.handlers:
+    fh = logging.FileHandler("logs/reaper_analyzer.log")
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    fh.setFormatter(fmt)
+    logger.addHandler(fh)
+logger.setLevel(logging.INFO)
 
 def analyze_log(entry):
-    """
-    Send a log entry to the Ollama API for analysis.
-    """
     prompt = f"""
-    You are Reaper Sentinel — an AI Security Analyst.
-    Analyze this log and classify it as Critical, Medium, or Benign.
-    Provide one-line reasoning.
+You are Reaper Sentinel — an AI Security Analyst.
+Analyze this log and classify it as Critical, Medium, or Benign.
+Provide one-line reasoning.
 
-    Log:
-    {json.dumps(entry, indent=2)}
-    """
-
+Log:
+{json.dumps(entry, indent=2)}
+"""
     try:
-        # Call Ollama API instead of CLI
+        start = time.time()
         response = requests.post(
             f"{OLLAMA_HOST}/api/generate",
-            json={
-                "model": "mistral",
-                "prompt": prompt,
-                "stream": False
-            },
+            json={"model": MODEL_NAME, "prompt": prompt, "stream": False},
             timeout=120
         )
+        elapsed = round(time.time() - start, 2)
 
-        # Handle API response
         if response.status_code == 200:
             data = response.json()
-            return data.get("response", "No response received.")
+            result_text = data.get("response", "").strip()
+            logger.info(f"{MODEL_NAME} | {elapsed}s | len={len(result_text)} | OK")
+            return result_text
         else:
-            return f"[ERROR] Ollama API returned {response.status_code}: {response.text}"
-
+            logger.error(f"{MODEL_NAME} | {elapsed}s | API Error {response.status_code}")
+            return f"[ERROR] Ollama returned {response.status_code}: {response.text}"
     except requests.exceptions.ConnectionError:
-        return f"[ERROR] Cannot connect to Ollama API at {OLLAMA_HOST}. Check if container is running."
+        logger.error(f"{MODEL_NAME} | ConnectionError -> {OLLAMA_HOST}")
+        return f"[ERROR] Cannot connect to Ollama API at {OLLAMA_HOST}."
     except Exception as e:
+        logger.exception(f"{MODEL_NAME} | Exception")
         return f"[EXCEPTION] {str(e)}"
 
-
 def batch_analyze(logs):
-    """
-    Analyze multiple log entries in sequence.
-    """
     results = []
     for i, entry in enumerate(logs, 1):
-        print(f"Analyzing log {i}/{len(logs)}...")
         result = analyze_log(entry)
-        results.append({
-            "log_id": i,
-            "result": result
-        })
+        results.append({"log_id": i, "result": result})
     return results
-
 
 # Optional manual test
 if __name__ == "__main__":

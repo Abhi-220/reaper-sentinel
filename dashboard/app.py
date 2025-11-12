@@ -17,7 +17,21 @@ import matplotlib.pyplot as plt
 # ─────────────────────────────
 st.set_page_config(page_title="Reaper Sentinel", page_icon="⚔️", layout="wide")
 
-st.title("⚔️ Reaper Sentinel Dashboard — v0.4 Memory Module")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+
+def check_ollama_status():
+    try:
+        r = requests.get(f"{OLLAMA_HOST}/api/tags", timeout=2)
+        return r.status_code == 200
+    except:
+        return False
+
+ollama_connected = check_ollama_status()
+status_emoji = "🟢" if ollama_connected else "🔴"
+st.markdown(f"**Ollama:** {status_emoji} {'Connected' if ollama_connected else 'Disconnected'}")
+
+
+st.title("⚔️ Reaper Sentinel Dashboard — v0.5 Memory Module")
 st.markdown("### AI-Powered Security Log Analyzer with Memory & Feedback")
 st.write("Upload your log file and let Reaper analyze it using AI. Each analysis will now be saved for future review.")
 
