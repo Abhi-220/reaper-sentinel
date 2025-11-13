@@ -32,7 +32,9 @@ desktop.ini
 # --- Logs & Reports ---
 logs/
 *.log
+logs/*.log
 data/reports/
+data/*.json
 data/feedback.json
 
 # --- Streamlit & Cache ---
