@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # ----------------------------
-# Create non-root user (like old Dockerfile)
+# Create non-root user
 # ----------------------------
 RUN adduser --disabled-password --gecos '' reaper || true
 RUN chown -R reaper:reaper /app
