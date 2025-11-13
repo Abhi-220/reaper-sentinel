@@ -1,31 +1,32 @@
+version: "3.9"
+
 services:
-  # 🧠 Ollama AI Engine
   ollama:
     image: ollama/ollama:latest
     container_name: reaper-ollama
-    ports:
-      - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
     restart: unless-stopped
 
-  # ⚔️ Reaper Sentinel Core
   reaper:
     build: .
     container_name: reaper-sentinel
     depends_on:
       - ollama
-    ports:
-      - "8000:8000"
-      - "8501:8501"
     environment:
-      - OLLAMA_HOST=http://ollama:11434
-      - MODEL_NAME=mistral
-      - MODE=prod
+      OLLAMA_HOST: "http://ollama:11434"
+      MODEL_NAME: "mistral"     # users can override
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - reaper_data:/app/data
+      - reaper_logs:/app/logs
+    ports:
+      - "8000:8000"   # FastAPI backend
+      - "8501:8501"   # Streamlit dashboard
     restart: unless-stopped
 
 volumes:
+  reaper_data:
+  reaper_logs:
   ollama_models:

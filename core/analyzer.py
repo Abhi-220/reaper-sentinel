@@ -27,77 +27,100 @@ if not logger.handlers:
 logger.setLevel(logging.INFO)
 
 # ─────────────────────────────────────────────
-# SEVERITY NORMALIZATION
+# SEVERITY LEVELS
 # ─────────────────────────────────────────────
 SEVERITY_LEVELS = ["Critical", "High", "Medium", "Low", "Informational"]
 
-SEVERITY_KEYWORDS = {
-    "Critical": ["critical", "compromise", "ransom", "exfiltration", "privilege escalation"],
-    "High": ["high", "exploit", "malware", "breach", "intrusion"],
-    "Medium": ["medium", "suspicious", "anomaly", "warning"],
-    "Low": ["low", "minor", "unusual"],
-    "Informational": ["info", "informational", "benign", "normal", "heartbeat"]
-}
-
 def normalize_severity(text: str) -> str:
-    """Map arbitrary text to one of the SEVERITY_LEVELS (safe fallback: Informational)."""
     if not text:
         return "Informational"
-    lower = text.lower()
-    # direct match for named tokens
+    text = text.lower()
     for lvl in SEVERITY_LEVELS:
-        if lvl.lower() in lower:
+        if lvl.lower() in text:
             return lvl
-    # keyword based matching
-    for lvl, keywords in SEVERITY_KEYWORDS.items():
-        for kw in keywords:
-            if kw in lower:
-                return lvl
-    # fallback
     return "Informational"
 
 # ─────────────────────────────────────────────
-# MODEL PROMPT
+# PROMPT WITH CORRECT PLACEHOLDER
 # ─────────────────────────────────────────────
-ANALYZE_PROMPT = """You are Reaper Sentinel, an advanced SIEM-grade Cybersecurity AI Analyst.
+ANALYZE_PROMPT = """You are Reaper Sentinel — an autonomous Tier-3 SOC AI, trained to act as a SIEM correlation engine.
 
-Your job is to analyze logs with the precision of a Tier-3 SOC Analyst.
+Analyze the provided log(s) using STRICT security rules.
 
-When analyzing a log:
-- Classify severity strictly as one of:
-  Critical, High, Medium, Low, Informational
-- Detect MITRE ATT&CK tactics and techniques.
-- Identify Indicators of Compromise (IOCs).
-- Detect anomalies, behavioral patterns, and attack progression.
-- Provide concise, actionable reasoning.
-- NEVER include extra text, disclaimers, or paragraphs.
+======================== RULES OF ANALYSIS ========================
 
-Return your output STRICTLY in this format:
+1. NEVER overestimate severity.
+   - A single failed login ≠ Critical
+   - Mark High/Critical ONLY if the event OR correlated events prove malicious intent.
+
+2. You MUST classify severity as one of:
+   Critical, High, Medium, Low, Informational
+
+3. For each log:
+   - Identify log CATEGORY automatically (Authentication, Network, Process, IAM, File, Cloud, Access Control, or Other)
+   - Map to MITRE ATT&CK:
+       • Tactic (TAxxxx or None)
+       • Technique (Txxxx or None)
+   - Extract IoCs (IP, username, hash, domain, or None)
+   - Detect BEHAVIOR pattern
+   - Correlate logs to detect attack chains ONLY when visible.
+
+4. Never assume anything not present in logs.
+
+======================== OUTPUT FORMAT ========================
 
 SEVERITY: <Critical|High|Medium|Low|Informational>
 CATEGORY: <Authentication|Network|File|Process|Access Control|Cloud|IAM|Application|Other>
 MITRE_TACTIC: <TAxxxx or None>
 MITRE_TECHNIQUE: <Txxxx or None>
-BEHAVIOR: <Short summary of suspicious behavior or “None”>
-IOC: <IP/Domain/File hash/Username etc., or “None”>
+BEHAVIOR: <Short human SOC-style classification>
+IOC: <IP/Username/Hash/Domain or None>
+CHAIN: <Attack chain step or “None”>
 CONFIDENCE: <High|Medium|Low>
-REASON: <One-line SOC-grade reasoning>
+REASON: <One-line SOC-grade justification>
 
-Now analyze the following log:
-
-{log}
+========================
+LOG TO ANALYZE:
+{logs}
+========================
 """
+
+# ─────────────────────────────────────────────
+# PARSER — Converts raw model text → dict
+# ─────────────────────────────────────────────
+def parse_reaper_output(text):
+    fields = {
+        "SEVERITY": None,
+        "CATEGORY": None,
+        "MITRE_TACTIC": None,
+        "MITRE_TECHNIQUE": None,
+        "BEHAVIOR": None,
+        "IOC": None,
+        "CHAIN": None,
+        "CONFIDENCE": None,
+        "REASON": None
+    }
+
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip().upper()
+        value = value.strip()
+
+        if key in fields:
+            fields[key] = value
+
+    # Normalize severity
+    fields["SEVERITY"] = normalize_severity(fields["SEVERITY"])
+    return fields
 
 
 # ─────────────────────────────────────────────
 # SINGLE LOG ANALYSIS
 # ─────────────────────────────────────────────
-def analyze_log(entry: Dict[str, Any]) -> str:
-    """
-    Call Ollama API to analyze a single log entry.
-    Returns normalized, human-readable output prefixed with SEVERITY line.
-    """
-    prompt = ANALYZE_PROMPT.format(log=json.dumps(entry, indent=2))
+def analyze_log(entry: Dict[str, Any]) -> Dict[str, Any]:
+    prompt = ANALYZE_PROMPT.format(logs=json.dumps(entry, indent=2))
 
     try:
         start = time.time()
@@ -109,72 +132,45 @@ def analyze_log(entry: Dict[str, Any]) -> str:
         elapsed = round(time.time() - start, 2)
 
         if resp.status_code != 200:
-            logger.error(f"{MODEL_NAME} | {elapsed}s | API {resp.status_code} | {resp.text[:200]}")
-            return f"[ERROR] Ollama returned {resp.status_code}: {resp.text}"
+            logger.error(f"{MODEL_NAME} | {elapsed}s | API {resp.status_code}")
+            return {"ERROR": f"Ollama returned {resp.status_code}"}
 
-        data = resp.json()
-        raw = data.get("response", "").strip()
+        raw = resp.json().get("response", "").strip()
 
-        # Try to parse severity from model output
-        # Accept either "SEVERITY: X" or free text and normalize.
-        severity = None
-        for line in raw.splitlines():
-            if line.strip().lower().startswith("severity:"):
-                severity_candidate = line.split(":", 1)[1].strip()
-                severity = normalize_severity(severity_candidate)
-                break
+        parsed = parse_reaper_output(raw)
 
-        if severity is None:
-            # fallback to scanning whole response
-            severity = normalize_severity(raw)
+        logger.info(f"{MODEL_NAME} | {elapsed}s | OK | Severity={parsed['SEVERITY']}")
+        return parsed
 
-        # Build a consistent return string: include SEVERITY line + model raw text
-        normalized_output = f"SEVERITY: {severity}\n{raw}"
-
-        logger.info(f"{MODEL_NAME} | {elapsed}s | OK | {severity} | len={len(raw)}")
-        return normalized_output
-
-    except requests.exceptions.ConnectionError:
-        logger.exception(f"{MODEL_NAME} | ConnectionError -> {OLLAMA_HOST}")
-        return f"[ERROR] Cannot connect to Ollama API at {OLLAMA_HOST}."
     except Exception as e:
-        logger.exception(f"{MODEL_NAME} | Exception")
-        return f"[EXCEPTION] {str(e)}"
+        logger.exception("Analyzer failure")
+        return {"ERROR": str(e)}
+
 
 # ─────────────────────────────────────────────
-# BATCH ANALYSIS (Appends to memory and returns results)
+# BATCH ANALYSIS (global log IDs)
 # ─────────────────────────────────────────────
 def batch_analyze(logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Analyze a list of log entries, append each to memory, and return a result list
-    with global log_id, result text, and recalled entries metadata.
-    """
     results = []
-    mem = memory.load_memory()
-    existing_count = len(mem.get("records", []))
+    memory_state = memory.load_memory()
+    existing_count = len(memory_state.get("records", []))
 
     for i, entry in enumerate(logs, start=1):
-        # recall similar items (non-blocking)
         recalled = memory.recall_similar(entry)
-        if recalled:
-            logger.debug(f"[MEMORY] Found {len(recalled)} similar entries for input #{i}")
 
-        # analyze
-        result_text = analyze_log(entry)
+        parsed = analyze_log(entry)
+        memory.store_analysis(entry, parsed)   # Store structured dict
 
-        # store analysis (memory stores timestamp, log, result)
-        memory.store_analysis(entry, result_text)
-
-        # compute global id (append-only)
         global_id = existing_count + i
 
         results.append({
             "log_id": global_id,
-            "result": result_text,
+            "result": parsed,
             "recalled": recalled
         })
 
     return results
+
 
 # ─────────────────────────────────────────────
 # Quick manual test runner
