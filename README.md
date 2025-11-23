@@ -141,3 +141,136 @@ MODE	prod	Runtime mode
 💀 Author’s Note
 
 Reaper Sentinel is a vision in progress — built from scratch to fuse Security & AI. Each version evolves toward a self-learning, context-aware SOC assistant.
+
+
+
+
+
+# ⚔️ Reaper Sentinel — AI-Powered SIEM & Threat Analyzer  
+### Version: **v0.6.2** (Intelligence Module)
+
+Reaper Sentinel is an **autonomous Tier-3 SOC AI**, acting as a modern SIEM engine that:
+
+- Analyzes logs  
+- Correlates events  
+- Detects attack chains  
+- Normalizes severity  
+- Learns from feedback  
+- Retains memory  
+- Provides SOC-grade reasoning  
+
+Reaper is designed to evolve into a **predictive, autonomous defense engine** powered by local LLMs (Ollama).
+
+---
+
+# 🚀 Features (v0.6.2)
+
+### ✅ AI Log Analyzer  
+Parses logs using Mistral / any Ollama model and produces structured SIEM output.
+
+### ✅ Severity Normalization  
+Maps all responses into:  
+**Critical, High, Medium, Low, Informational**
+
+### ✅ Attack Chain Detection  
+Through prompt-based context correlation.
+
+### ✅ Reaper Brain Memory  
+Stores all analyzed logs with timestamps.
+
+### ✅ Feedback Engine  
+User feedback trains Reaper for adaptive learning (planned for v0.7).
+
+### ✅ Web Dashboard  
+Streamlit UI with:  
+- Real-time analysis  
+- Memory browser  
+- Feedback module  
+- Report archive  
+- Analytics + charts
+
+### ✅ Stateless API backend  
+FastAPI service exposing clean REST routes.
+
+---
+
+# 📁 Repository Structure
+
+```
+reaper-sentinel/
+├── api/ (FastAPI backend)
+├── core/
+│   ├── analyzer.py
+│   ├── memory.py
+│   ├── storage.py
+│   └── feedback.py
+├── dashboard/
+│   └── app.py
+├── data/
+│   ├── reaper_memory.json
+│   └── feedback.json
+├── docker-compose.yml
+├── Dockerfile
+├── requirements.txt
+└── README.md   ← YOU ARE HERE
+```
+
+---
+
+# 🛡️ API Endpoints (FastAPI)
+
+| Method | Endpoint       | Description |
+|--------|----------------|-------------|
+| **GET** | `/` | Health check message |
+| **POST** | `/analyze` | Analyze one or more logs |
+| **POST** | `/feedback` | Store user feedback |
+| **GET** | `/memory` | Fetch Reaper Brain Memory |
+| **GET** | `/healthz` | Ollama + Memory health status |
+
+Full API documentation is available under:  
+📄 [`docs/api.md`](docs/api.md)
+
+---
+
+# 📚 Documentation
+
+| File | Description |
+|------|-------------|
+| `docs/api.md` | API Reference |
+| `docs/architecture.md` | High-level system architecture |
+| `docs/developer-guide.md` | Codeflow explanation |
+| `docs/deployment.md` | Docker + environment guide |
+| `docs/changelog.md` | Version history |
+
+---
+
+# 🧪 Quick Start (Local)
+
+```bash
+git clone https://github.com/Abhi-220/reaper-sentinel
+cd reaper-sentinel
+pip install -r requirements.txt
+python run_reaper.py
+```
+
+Dashboard runs at:  
+➡️ http://localhost:8501  
+API runs at:  
+➡️ http://localhost:8000
+
+---
+
+# 🐳 Docker Deployment
+
+📄 See `docs/deployment.md` for full instructions.
+
+---
+
+# ⚔️ The Future — v0.7, v0.8, v1.0
+
+- **v0.7** → Adaptive learning (feedback-powered LLM tuning)  
+- **v0.8** → Real-time log ingestion + universal parsers  
+- **v1.0** → Predictive attack chain modeling (AI SOC engine)  
+
+Reaper Sentinel is evolving.  
+Stay sharp. ⚔️
