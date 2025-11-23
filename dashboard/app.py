@@ -11,6 +11,7 @@ import json
 from core import storage
 import matplotlib.pyplot as plt
 import logging
+from typing import Any, Dict
 
 # ───────────────────────────────────────────────
 # STREAMLIT DEBUG LOGGER
@@ -25,142 +26,202 @@ logging.basicConfig(
     encoding="utf-8"
 )
 
-def debug(msg):
+def debug(msg: str):
     logging.debug(msg)
     print("[DASHBOARD]", msg)
 
+
 # ───────────────────────────────────────────────
-# STREAMLIT LAYOUT
+# CONFIG / API ENDPOINTS
 # ───────────────────────────────────────────────
 st.set_page_config(page_title="Reaper Sentinel", page_icon="⚔️", layout="wide")
 
-API_ANALYZE = "http://127.0.0.1:8000/analyze"
-API_MEMORY = "http://127.0.0.1:8000/memory"
-API_FEEDBACK = "http://127.0.0.1:8000/feedback"
+API_ANALYZE = os.getenv("API_ANALYZE", "http://127.0.0.1:8000/analyze")
+API_MEMORY = os.getenv("API_MEMORY", "http://127.0.0.1:8000/memory")
+API_FEEDBACK = os.getenv("API_FEEDBACK", "http://127.0.0.1:8000/feedback")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+
+
+STRUCTURE_KEYS = [
+    "SEVERITY", "CATEGORY", "MITRE_TACTIC", "MITRE_TECHNIQUE",
+    "BEHAVIOR", "IOC", "CHAIN", "CONFIDENCE", "REASON"
+]
+
+
+# ───────────────────────────────────────────────
+# PARSER
+# ───────────────────────────────────────────────
+def parse_result_to_structured(result: Any) -> Dict[str, Any]:
+    out = {k: None for k in STRUCTURE_KEYS}
+    out["RAW"] = None
+
+    if isinstance(result, dict):
+        for k, v in result.items():
+            ku = k.strip().upper()
+            if ku in out:
+                out[ku] = v
+        out["RAW"] = json.dumps(result, ensure_ascii=False)
+        return out
+
+    if isinstance(result, str):
+        txt = result.strip()
+        out["RAW"] = txt
+
+        try:
+            parsed = json.loads(txt)
+            if isinstance(parsed, dict):
+                for k, v in parsed.items():
+                    ku = k.strip().upper()
+                    if ku in out:
+                        out[ku] = v
+                return out
+        except:
+            pass
+
+        for line in txt.splitlines():
+            if ":" not in line:
+                continue
+            key, val = line.split(":", 1)
+            ku = key.strip().upper()
+            if ku in out:
+                out[ku] = val.strip()
+        return out
+
+    out["RAW"] = str(result)
+    return out
+
+
+# ───────────────────────────────────────────────
+# FIXED OLLAMA HEALTH CHECK
+# ───────────────────────────────────────────────
+def check_ollama_status() -> bool:
+    try:
+        url = f"{OLLAMA_HOST}/api/tags"
+        debug(f"Checking Ollama health at {url}")
+        r = requests.get(url, timeout=3)
+        return r.ok
+    except Exception as e:
+        debug(f"Ollama health failed: {e}")
+        return False
+
+
+ollama_connected = check_ollama_status()
+status_emoji = "🟢" if ollama_connected else "🔴"
+st.markdown(f"**Ollama:** {status_emoji} {'Connected' if ollama_connected else 'Disconnected'}")
+
 
 # ───────────────────────────────────────────────
 # TABS
 # ───────────────────────────────────────────────
 tab1, tab2, tab3 = st.tabs(["🧠 Log Analyzer", "📚 Reaper Brain Memory", "💬 Feedback"])
 
+
 # ================================================================
-# ======================== TAB 1 — ANALYZER =======================
+# TAB 1 — ANALYZER
 # ================================================================
 with tab1:
-    st.title("⚔️ Reaper Sentinel Dashboard — v0.6.2 Intelligence Module")
+    st.title("⚔️ Reaper Sentinel Dashboard — v0.6.3 Intelligence Module")
     st.markdown("### AI-Powered Security Log Analyzer with Structured Output + Feedback Training")
 
     uploaded_file = st.file_uploader("📁 Upload Log File (JSON format)", type=["json"])
 
-    # SESSION: store analysis results
+    # Initialize empty DF
     if "analysis_df" not in st.session_state:
-        st.session_state.analysis_df = None
+        st.session_state.analysis_df = pd.DataFrame()
 
     if uploaded_file:
-        logs = json.load(uploaded_file)
-        st.success(f"Loaded {len(logs)} logs.")
+        try:
+            logs = json.load(uploaded_file)
+            st.success(f"Loaded {len(logs)} logs.")
+        except Exception as e:
+            st.error(f"Invalid JSON: {e}")
+            logs = None
 
-        if st.button("🧠 Analyze Logs with Reaper"):
-            with st.spinner("Reaper is analyzing… ⚙️"):
-                try:
-                    response = requests.post(API_ANALYZE, json={"logs": logs})
+        if logs:
+            if st.button("🧠 Analyze Logs with Reaper"):
+                with st.spinner("Analyzing…"):
+
+                    response = requests.post(API_ANALYZE, json={"logs": logs}, timeout=300)
                     if not response.ok:
-                        st.error(f"❌ API error: {response.status_code}")
+                        st.error(f"Error: {response.status_code}")
                         st.stop()
 
                     results = response.json().get("results", [])
-
-                    # Extract structured model output
                     rows = []
+
                     for item in results:
-                        structured = item["result"]  # dict of SEVERITY, CATEGORY, ...
-                        structured["log_id"] = item["log_id"]
-                        rows.append(structured)
+                        log_id = item.get("log_id")
+                        parsed = parse_result_to_structured(item.get("result"))
+                        parsed["log_id"] = int(log_id)
+                        rows.append(parsed)
 
-                    df = pd.DataFrame(rows)
-                    df.index = df["log_id"]
+                    df_new = pd.DataFrame(rows)
 
-                    # Store for session
-                    st.session_state.analysis_df = df
+                    # always enforce log_id as index
+                    df_new = df_new.set_index("log_id", drop=False)
+
+                    # Replace entire session with fresh batch (CRITICAL FIX)
+                    st.session_state.analysis_df = df_new
 
                     # Save report
-                    saved_path = storage.save_report(results)
-                    st.success(f"💾 Report saved: {saved_path}")
+                    storage.save_report(results)
+                    st.success("Report saved.")
 
-                except Exception as e:
-                    st.error(f"Error: {e}")
-                    st.stop()
+    df = st.session_state.analysis_df
 
-    # DISPLAY RESULTS
-    df = st.session_state.get("analysis_df")
-
-    if df is None or df.empty:
+    if df.empty:
         st.info("Upload and analyze logs to begin.")
         st.stop()
 
-    # --------------------------
-    # FULL-WIDTH ANALYSIS TABLE
-    # --------------------------
+    # Display results
     st.markdown("### 🧾 AI Analysis Results (Structured)")
     st.dataframe(df, use_container_width=True)
 
-    # --------------------------
-    # SUMMARY ANALYTICS
-    # --------------------------
-    st.markdown("### 📊 Analysis Summary")
+    # Summary
+    st.markdown("### 📊 Summary")
 
-    SEVERITY_LEVELS = ["Critical", "High", "Medium", "Low", "Informational"]
+    sev_levels = ["Critical", "High", "Medium", "Low", "Informational"]
+    counts = {lvl: (df["SEVERITY"] == lvl).sum() for lvl in sev_levels}
 
-    counts = {lvl: (df["SEVERITY"] == lvl).sum() for lvl in SEVERITY_LEVELS}
-    total = len(df)
+    cols = st.columns(6)
+    cols[0].metric("Total Logs", len(df))
+    for i, lvl in enumerate(sev_levels):
+        cols[i+1].metric(lvl, counts[lvl])
 
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    col1.metric("Total Logs", total)
-    col2.metric("Critical", counts["Critical"])
-    col3.metric("High", counts["High"])
-    col4.metric("Medium", counts["Medium"])
-    col5.metric("Low", counts["Low"])
-    col6.metric("Informational", counts["Informational"])
-
-    # PIE CHART
+    # Pie chart
     fig, ax = plt.subplots()
-    valid_labels = [lvl for lvl in SEVERITY_LEVELS if counts[lvl] > 0]
-    values = [counts[lvl] for lvl in valid_labels]
+    values = [counts[lvl] for lvl in sev_levels if counts[lvl] > 0]
+    labels = [lvl for lvl in sev_levels if counts[lvl] > 0]
 
     if values:
-        ax.pie(values, labels=valid_labels, autopct="%1.1f%%", startangle=90)
+        ax.pie(values, labels=labels, autopct="%1.1f%%", startangle=90)
         ax.axis("equal")
         st.pyplot(fig)
+    else:
+        st.info("No data for visualization.")
 
-    # --------------------------
-    # INLINE FEEDBACK
-    # --------------------------
-    st.markdown("### 💬 Train Reaper — Submit Feedback")
+    # Feedback
+    st.markdown("### 💬 Submit Feedback")
 
     if "feedback_status" not in st.session_state:
         st.session_state.feedback_status = ""
 
-    with st.form("feedback_form_inline"):
-        log_id = st.number_input("Select Log ID", min_value=1, max_value=len(df), step=1)
-        fb_choice = st.selectbox("Feedback", ["Accurate", "Inaccurate", "Needs Review"])
-        reason = st.text_area("Reason (optional)")
+    min_id, max_id = int(df.index.min()), int(df.index.max())
 
-        submitted = st.form_submit_button("Submit Feedback")
+    with st.form("feedback_form"):
+        target_id = st.number_input("Log ID", min_value=min_id, max_value=max_id, value=min_id)
+        choice = st.selectbox("Feedback", ["Accurate", "Inaccurate", "Needs Review"])
+        reason = st.text_area("Reason (optional)")
+        submitted = st.form_submit_button("Submit")
 
     if submitted:
+        payload = {"log_id": int(target_id), "feedback": choice, "reason": reason}
         try:
-            payload = {
-                "log_id": int(log_id),
-                "feedback": fb_choice,
-                "reason": reason
-            }
-            res = requests.post(API_FEEDBACK, json=payload)
-
-            if res.ok:
-                st.session_state.feedback_status = f"Feedback recorded for Log #{log_id}"
+            r = requests.post(API_FEEDBACK, json=payload)
+            if r.ok:
+                st.session_state.feedback_status = f"Feedback saved for Log #{target_id}"
             else:
-                st.session_state.feedback_status = f"Error: {res.text}"
-
+                st.session_state.feedback_status = f"Error: {r.status_code}"
         except Exception as e:
             st.session_state.feedback_status = f"Error: {e}"
 
@@ -169,55 +230,41 @@ with tab1:
 
 
 # ================================================================
-# ======================== TAB 2 — MEMORY =========================
+# TAB 2 — MEMORY
 # ================================================================
 with tab2:
     st.markdown("### 🧠 Reaper Brain Memory")
 
     try:
-        mem = requests.get(API_MEMORY).json()
-
-        if not mem.get("records"):
-            st.info("🩶 No memory data yet.")
+        mem = requests.get(API_MEMORY, timeout=10).json()
+        records = mem.get("records", [])
+        if not records:
+            st.info("Empty memory.")
             st.stop()
-
-        df_mem = pd.DataFrame(mem["records"])
-        df_mem.index = range(1, len(df_mem) + 1)
-
+        df_mem = pd.DataFrame(records)
         st.dataframe(df_mem, use_container_width=True)
-
     except Exception as e:
-        st.error(f"Failed to load memory: {e}")
+        st.error(f"Error: {e}")
 
 
 # ================================================================
-# ======================== TAB 3 — ARCHIVE ========================
+# TAB 3 — ARCHIVE
 # ================================================================
 with tab3:
-    st.title("📚 Full Memory & Feedback Archive")
-
+    st.markdown("### 📚 Full Memory Archive")
     try:
-        mem = requests.get(API_MEMORY).json()
-        records = mem.get("records", [])
-
-        if not records:
-            st.info("No records yet.")
-            st.stop()
-
-        df_arch = pd.DataFrame(records)
-        df_arch.index = range(1, len(df_arch) + 1)
-
+        mem = requests.get(API_MEMORY, timeout=10).json()
+        df_arch = pd.DataFrame(mem.get("records", []))
         st.dataframe(df_arch, use_container_width=True)
-
     except Exception as e:
-        st.error(f"Unable to load archive: {e}")
+        st.error(f"Error: {e}")
 
 
 # ================================================================
-# ======================== REPORTS SECTION ========================
+# REPORTS SECTION
 # ================================================================
 st.markdown("---")
-st.subheader("📜 View Past Reports")
+st.subheader("📜 Past Reports")
 
 try:
     reports = storage.list_reports()
@@ -226,6 +273,6 @@ try:
         if selected:
             st.json(storage.load_report(selected))
     else:
-        st.info("No reports found.")
+        st.info("No reports stored.")
 except Exception as e:
-    st.warning(f"Unable to load reports: {e}")
+    st.warning(f"Error loading reports: {e}")

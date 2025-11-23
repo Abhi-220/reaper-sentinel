@@ -1,47 +1,50 @@
-# ⚔️ Reaper Sentinel Dockerfile (v0.6.2)
+# ⚔️ Reaper Sentinel — Production Dockerfile (v0.6.3)
 FROM python:3.12-slim
 
 # ----------------------------
-# System dependencies
+# System Dependencies
 # ----------------------------
 RUN apt-get update && apt-get install -y \
     curl git bash build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # ----------------------------
-# Create app directories
+# Working Directory
 # ----------------------------
 WORKDIR /app
+
+# Prepare data + logs
 RUN mkdir -p /app/data /app/logs
 
+# Avoid Python buffering issues
 ENV PYTHONUNBUFFERED=1
 
 # ----------------------------
-# Install Python dependencies
+# Install Python Dependencies
 # ----------------------------
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ----------------------------
-# Copy project
+# Copy Application Code
 # ----------------------------
 COPY . .
 
 # ----------------------------
-# Create non-root user
+# Non-root User
 # ----------------------------
 RUN adduser --disabled-password --gecos '' reaper || true
 RUN chown -R reaper:reaper /app
 USER reaper
 
 # ----------------------------
-# Expose FastAPI + Streamlit
+# Expose Ports (FastAPI + Streamlit)
 # ----------------------------
 EXPOSE 8000
 EXPOSE 8501
 
 # ----------------------------
-# Start both backend + dashboard
+# Start Backend + Dashboard
 # ----------------------------
 CMD ["bash", "-c", "\
     uvicorn main:app --host 0.0.0.0 --port 8000 & \

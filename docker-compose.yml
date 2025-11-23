@@ -1,13 +1,11 @@
-version: "3.9"
-
 services:
   ollama:
     image: ollama/ollama:latest
     container_name: reaper-ollama
-    volumes:
-      - ollama_models:/root/.ollama
     ports:
       - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
     restart: unless-stopped
 
   reaper:
@@ -16,14 +14,21 @@ services:
     depends_on:
       - ollama
     environment:
+      # Correct internal networking for containers
       OLLAMA_HOST: "http://ollama:11434"
-      MODEL_NAME: "mistral"     # users can override
+      MODEL_NAME: "mistral"
+
+      # Optional — you can override analyzer timeout via compose
+      ANALYZER_TIMEOUT: 120
+
+    ports:
+      - "8000:8000"   # Backend
+      - "8501:8501"   # Dashboard
+
     volumes:
       - reaper_data:/app/data
       - reaper_logs:/app/logs
-    ports:
-      - "8000:8000"   # FastAPI backend
-      - "8501:8501"   # Streamlit dashboard
+
     restart: unless-stopped
 
 volumes:
